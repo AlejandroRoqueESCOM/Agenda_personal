@@ -5,6 +5,21 @@ plugins {
 }
 
 android {
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/license.txt"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/NOTICE.txt"
+            excludes += "META-INF/notice.txt"
+            excludes += "META-INF/ASL2.0"
+        }
+    }
+
     namespace = "com.example.proyecto_agenda"
     compileSdk {
         version = release(36)
@@ -70,6 +85,19 @@ dependencies {
     implementation("com.google.android.gms:play-services-maps:19.2.0")
     implementation("com.google.maps.android:maps-ktx:3.4.0")
     implementation("com.google.android.libraries.places:places:3.3.0")
+    // Google Sign-In y Drive API
+    implementation("com.google.android.gms:play-services-auth:21.4.0")
+    implementation("com.google.http-client:google-http-client-gson:2.0.2")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20230822-2.0.0")
+
+    // ESTA FALTABA: Contiene AndroidHttp y GoogleAccountCredential
+    implementation("com.google.api-client:google-api-client-android:2.8.1")
+
+    implementation("com.google.apis:google-api-services-drive:v3-rev20230822-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+
+    implementation("com.google.http-client:google-http-client-android:1.43.3")
 
 
 }

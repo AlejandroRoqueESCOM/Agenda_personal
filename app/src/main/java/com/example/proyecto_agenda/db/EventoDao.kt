@@ -26,4 +26,10 @@ interface EventoDao {
     // Filtros dinámicos para Consultas
     @Query("SELECT * FROM eventos WHERE timestamp BETWEEN :inicio AND :fin")
     suspend fun getEventosEnRango(inicio: Long, fin: Long): List<Evento>
+
+    @Query("DELETE FROM eventos")
+    suspend fun deleteAll()
+
+    @Insert
+    suspend fun insertAll(eventos: List<Evento>)
 }

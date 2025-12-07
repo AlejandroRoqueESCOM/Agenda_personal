@@ -7,80 +7,79 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class NotificationReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        // Recuperar datos del intent
-        val titulo = intent.getStringExtra("titulo") ?: "Evento Pendiente"
-        val mensaje = intent.getStringExtra("mensaje") ?: "Tienes una tarea programada."
-        val idEvento = intent.getIntExtra("idEvento", 0)
+        Log.d("ALARM_CHECK", "¡Alarma recibida! Intentando mostrar notificación...")
 
-        // Verificar si es un evento atrasado o a tiempo (opcional, para cambiar el texto)
-        val timestampProgramado = intent.getLongExtra("timestamp", 0L)
-        val diferencia = System.currentTimeMillis() - timestampProgramado
+        try {
+            val titulo = intent.getStringExtra("titulo") ?: "Evento Pendiente"
+            val mensaje = intent.getStringExtra("mensaje") ?: "Revisa tu agenda."
+            val idEvento = intent.getIntExtra("idEvento", System.currentTimeMillis().toInt())
 
-        // Si la diferencia es mayor a 5 minutos (300,000 ms), podríamos agregar "(Atrasado)" al título
-        val tituloFinal = if (diferencia > 300000) "$titulo (Atrasado)" else titulo
-
-        crearYMostrarNotificacion(context, tituloFinal, mensaje, idEvento)
+            crearYMostrarNotificacion(context, titulo, mensaje, idEvento)
+        } catch (e: Exception) {
+            Log.e("ALARM_CHECK", "Error al mostrar notificación: ${e.message}")
+        }
     }
 
     private fun crearYMostrarNotificacion(context: Context, titulo: String, mensaje: String, id: Int) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "agenda_alta_prioridad"
+        val channelId = "agenda_channel_id"
 
-        // 1. Configuración del CANAL (Fundamental para Android 8.0+)
+        val sonidoUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+        // Configuración CRÍTICA del canal para que suene
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
             val channel = NotificationChannel(
                 channelId,
-                "Recordatorios de Agenda",
-                NotificationManager.IMPORTANCE_HIGH // IMPORTANCE_HIGH hace que sea EMERGENTE (Heads-up)
+                "Notificaciones de Agenda",
+                NotificationManager.IMPORTANCE_HIGH // IMPORTANCE_HIGH = Sonido + Pop-up
             ).apply {
-                description = "Notificaciones para eventos y recordatorios"
+                description = "Alertas de eventos importantes"
                 enableLights(true)
                 lightColor = Color.BLUE
                 enableVibration(true)
-                vibrationPattern = longArrayOf(0, 500, 200, 500) // Patrón de vibración
-                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC // Visible en BLOQUEO
+                vibrationPattern = longArrayOf(0, 500, 200, 500)
+                setSound(sonidoUri, audioAttributes) // Forzar sonido en el canal
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
             notificationManager.createNotificationChannel(channel)
         }
 
-        // 2. Intent para abrir la aplicación al tocar la notificación
         val intentApp = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("idEventoAbierto", id) // Por si quieres abrir el evento directo
         }
 
         val pendingIntent = PendingIntent.getActivity(
-            context,
-            id, // ID único para que no se sobrescriban los intents
-            intentApp,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            context, id, intentApp, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // 3. Sonido de notificación predeterminado
-        val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-
-        // 4. Construcción de la Notificación
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_menu_my_calendar) // ÍCONO OBLIGATORIO
+            .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
             .setContentTitle(titulo)
-            .setContentText(mensaje) // Texto corto
-            .setStyle(NotificationCompat.BigTextStyle().bigText(mensaje)) // NOTIFICACIÓN EXPANDIBLE (Texto largo)
-            .setPriority(NotificationCompat.PRIORITY_HIGH) // Para versiones anteriores a Android 8 (Emergente)
-            .setCategory(NotificationCompat.CATEGORY_EVENT)
-            .setContentIntent(pendingIntent) // Acción al hacer click
-            .setAutoCancel(true) // Se borra al tocarla
-            .setSound(defaultSoundUri)
+            .setContentText(mensaje)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(mensaje))
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // Para Android 7 o inferior
+            .setCategory(NotificationCompat.CATEGORY_ALARM) // Categoría Alarma para que sea insistente
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setSound(sonidoUri)
             .setVibrate(longArrayOf(0, 500, 200, 500))
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Visible en pantalla de bloqueo
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        // Mostrar
         notificationManager.notify(id, builder.build())
+        Log.d("ALARM_CHECK", "Notificación enviada al sistema.")
     }
 }
