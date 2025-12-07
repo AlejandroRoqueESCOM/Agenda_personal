@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView android:text="Editar Evento" android:textSize="18sp" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginBottom="10dp"/>
+
+    <TextView android:text="Cambiar Estatus:" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <Spinner android:id="@+id/spinnerDialogStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp"/>
+
+    <TextView android:text="Cambiar Contacto:" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <EditText android:id="@+id/etDialogContacto" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp"/>
+
+    <TextView android:text="Cambiar Ubicación:" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <EditText android:id="@+id/etDialogUbicacion" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="20dp"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button android:id="@+id/btnDialogActualizar" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Actualizar" android:backgroundTint="@color/design_default_color_primary_variant"/>
+        <Space android:layout_width="8dp" android:layout_height="wrap_content"/>
+        <Button android:id="@+id/btnDialogEliminar" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Eliminar" android:backgroundTint="@color/design_default_color_primary_variant"/>
+    </LinearLayout>
+</LinearLayout>

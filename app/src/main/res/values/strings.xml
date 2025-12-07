@@ -1,0 +1,34 @@
+<resources>
+    <string name="app_name">Proyecto_Agenda</string>
+    <string name="menu_add_event">Añadir evento</string>
+    <string name="menu_consult">Consultar y modificar</string>
+    <string name="menu_backup">Realizar respaldo (Drive)</string>
+    <string name="menu_restore">Restaurar datos (Drive)</string>
+    <string name="menu_about">Acerca de</string>
+    <string name="menu_exit">Salir</string>
+    <string name="nav_home">Inicio</string>
+
+    <!--EVENTO -->
+
+    <string name="label_categoria">Categoría</string>
+    <string name="cat_cita">Cita</string>
+    <string name="cat_junta">Junta</string>
+    <string name="cat_entrega">Entrega de Proyecto</string>
+    <string name="cat_examen">Examen</string>
+    <string name="cat_otro">Otro</string>
+
+    <string name="hint_fecha">Fecha (dd/mm/aaaa)</string>
+    <string name="hint_hora">Hora (--:--)</string>
+    <string name="hint_descripcion">Descripción</string>
+    <string name="hint_ubicacion">Ubicación</string>
+    <string name="hint_contacto">Contacto</string>
+    <string name="label_status">Estatus</string>
+    <string name="btn_guardar">Guardar Evento</string>
+
+    <string-array name="status_options">
+        <item>Pendiente</item>
+        <item>Realizado</item>
+        <item>Aplazado</item>
+    </string-array>
+
+</resources>

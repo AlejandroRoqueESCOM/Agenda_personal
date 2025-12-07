@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/nav_home"> <fragment
+    android:id="@+id/nav_home"
+    android:name="com.example.proyecto_agenda.HomeFragment"
+    android:label="Inicio"
+    tools:layout="@layout/fragment_home" />
+
+    <fragment
+        android:id="@+id/nav_agregar"
+        android:name="com.example.proyecto_agenda.AgregarFragment"
+        android:label="Crear Evento"
+        tools:layout="@layout/fragment_agregar" />
+
+    <fragment
+        android:id="@+id/nav_consultar"
+        android:name="com.example.proyecto_agenda.ConsultasFragment"
+        android:label="Consultas"
+        tools:layout="@layout/fragment_consultas" />
+
+    <fragment
+        android:id="@+id/nav_respaldo"
+        android:name="com.example.proyecto_agenda.RespaldoFragment"
+        android:label="Respaldo en Drive"
+        tools:layout="@layout/fragment_respaldo" />
+
+    <fragment
+        android:id="@+id/nav_restaurar"
+        android:name="com.example.proyecto_agenda.RestaurarFragment"
+        android:label="Restaurar Datos"
+        tools:layout="@layout/fragment_restaurar" />
+
+    <fragment
+        android:id="@+id/nav_acerca"
+        android:name="com.example.proyecto_agenda.AcercaDeFragment"
+        android:label="Acerca de"
+        tools:layout="@layout/fragment_acerca_de" />
+
+</navigation>

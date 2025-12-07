@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+<group android:checkableBehavior="single">
+    <!--  <string name="menu_add_event">Añadir evento</string> -->
+    <item
+        android:id="@+id/nav_agregar"
+        android:icon="@android:drawable/ic_menu_add"
+        android:title="@string/menu_add_event"/>
+
+
+    <!--  <string name="menu_consult">Consultar y modificar</string> -->
+    <item
+        android:id="@+id/nav_consultar"
+        android:icon="@android:drawable/ic_menu_search"
+        android:title="@string/menu_consult"/>
+
+    <!--   <string name="menu_backup">Realizar respaldo (Drive)</string> -->
+    <item
+        android:id="@+id/nav_respaldo"
+        android:icon="@android:drawable/ic_menu_upload"
+        android:title="@string/menu_backup"/>
+
+    <!--  <string name="menu_restore">Restaurar datos (Drive)</string> -->
+    <item
+        android:id="@+id/nav_restaurar"
+        android:icon="@android:drawable/stat_sys_download"
+        android:title="@string/menu_restore"/>
+
+    <!--  <string name="menu_about">Acerca de</string> -->
+    <item
+        android:id="@+id/nav_acerca"
+        android:icon="@android:drawable/ic_menu_info_details"
+        android:title="@string/menu_about"/>
+
+   <!--   <string name="menu_exit">Salir</string> -->
+    <item
+        android:id="@+id/nav_salir"
+        android:icon="@android:drawable/ic_menu_close_clear_cancel"
+        android:title="@string/menu_exit"/>
+
+ </group>
+ </menu>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:gravity="center_vertical"
+    android:background="@drawable/border_bottom"> <TextView
+    android:id="@+id/tvFechaTabla"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1.5"
+    android:text="2025-05-11"
+    android:textSize="12sp"
+    android:textColor="@color/black"/>
+
+    <TextView
+        android:id="@+id/tvHoraTabla"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="10:00"
+        android:textSize="12sp"
+        android:textColor="@color/black"/>
+
+    <TextView
+        android:id="@+id/tvCategoriaTabla"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1.5"
+        android:text="Cita"
+        android:textSize="12sp"/>
+
+    <TextView
+        android:id="@+id/tvStatusTabla"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1.5"
+        android:text="Pendiente"
+        android:textStyle="italic"
+        android:textSize="12sp"/>
+
+    <TextView
+        android:id="@+id/tvDescripcionTabla"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="2"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="Descripción..."
+        android:textSize="12sp"/>
+
+</LinearLayout>
