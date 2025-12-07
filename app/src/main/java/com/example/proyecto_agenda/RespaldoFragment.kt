@@ -1,6 +1,7 @@
 package com.example.proyecto_agenda
 
 import android.app.Activity
+import android.content.Context // Importante para SharedPreferences
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -18,6 +19,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import com.google.api.client.extensions.android.http.AndroidHttp
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
@@ -29,6 +31,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 
+@Suppress("DEPRECATION")
 class RespaldoFragment : Fragment() {
 
     private lateinit var driveServiceHelper: DriveServiceHelper
@@ -36,7 +39,6 @@ class RespaldoFragment : Fragment() {
     private lateinit var btnRespaldo: MaterialButton
     private lateinit var tvUltimo: TextView
 
-    // Launcher para Login de Google
     private val loginLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             handleSignInResult(result.data)
@@ -48,6 +50,17 @@ class RespaldoFragment : Fragment() {
         btnRespaldo = view.findViewById(R.id.btnRealizarRespaldo)
         progressBar = view.findViewById(R.id.progressBarRespaldo)
         tvUltimo = view.findViewById(R.id.tvUltimoRespaldo)
+
+        // --- CORRECCIÓN 1: LEER FECHA GUARDADA AL INICIAR ---
+        val prefs = requireContext().getSharedPreferences("agenda_prefs", Context.MODE_PRIVATE)
+        val ultimaFecha = prefs.getString("ultimo_respaldo", null)
+
+        if (ultimaFecha != null) {
+            tvUltimo.text = "Último respaldo: $ultimaFecha"
+        } else {
+            tvUltimo.text = "Último respaldo: Ninguno"
+        }
+        // -----------------------------------------------------
 
         btnRespaldo.setOnClickListener {
             requestSignIn()
@@ -67,21 +80,18 @@ class RespaldoFragment : Fragment() {
     private fun handleSignInResult(result: Intent?) {
         GoogleSignIn.getSignedInAccountFromIntent(result)
             .addOnSuccessListener { account ->
-                // Inicializar Drive Helper
                 val credential = GoogleAccountCredential.usingOAuth2(
                     requireContext(), Collections.singleton(DriveScopes.DRIVE_FILE)
                 )
                 credential.selectedAccount = account.account
 
                 val googleDriveService = Drive.Builder(
-                    AndroidHttp.newCompatibleTransport(),
+                    NetHttpTransport(),
                     GsonFactory(),
                     credential
                 ).setApplicationName("Proyecto Agenda").build()
 
                 driveServiceHelper = DriveServiceHelper(googleDriveService)
-
-                // Proceder al respaldo
                 realizarRespaldo()
             }
             .addOnFailureListener {
@@ -96,18 +106,18 @@ class RespaldoFragment : Fragment() {
 
         lifecycleScope.launch {
             try {
-                // 1. Obtener datos de Room
                 val eventos = AppDatabase.getDatabase(requireContext()).eventoDao().getAll()
-
-                // 2. Convertir a JSON
                 val jsonContent = Gson().toJson(eventos)
-
-                // 3. Subir a Drive
                 driveServiceHelper.createFile(jsonContent)
 
-                // 4. UI Success
                 val fechaHoy = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
                 tvUltimo.text = "Último respaldo: $fechaHoy"
+
+                // --- CORRECCIÓN 2: GUARDAR LA FECHA EN MEMORIA ---
+                val prefs = requireContext().getSharedPreferences("agenda_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putString("ultimo_respaldo", fechaHoy).apply()
+                // -------------------------------------------------
+
                 Toast.makeText(context, "Respaldo exitoso en Drive", Toast.LENGTH_SHORT).show()
 
             } catch (e: Exception) {
