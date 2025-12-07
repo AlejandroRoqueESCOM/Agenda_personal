@@ -63,7 +63,7 @@
                 android:id="@+id/btnRealizarRespaldo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Realizar espaldo ahora"
+                android:text="Realizar respaldo ahora"
                 android:layout_marginTop="16dp"
                 app:icon="@android:drawable/ic_menu_upload"
                 app:iconGravity="textStart"/>
