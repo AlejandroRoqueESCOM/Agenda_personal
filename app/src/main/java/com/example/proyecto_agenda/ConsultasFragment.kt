@@ -2,9 +2,9 @@ package com.example.proyecto_agenda
 
 import android.app.AlertDialog
 import android.app.DatePickerDialog
-import android.content.Intent
+import android.app.TimePickerDialog
 import android.database.Cursor
-import android.os.Build
+import android.location.Geocoder
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.view.LayoutInflater
@@ -12,34 +12,38 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.proyecto_agenda.db.AppDatabase
 import com.example.proyecto_agenda.db.Evento
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.MapView
+import com.google.android.gms.maps.MapsInitializer
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.libraries.places.api.Places
-import com.google.android.libraries.places.api.model.Place
 import com.google.android.libraries.places.widget.Autocomplete
 import com.google.android.libraries.places.widget.model.AutocompleteActivityMode
+import com.google.android.libraries.places.api.model.Place
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputEditText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
 class ConsultasFragment : Fragment() {
 
-    // ... (Tus variables de Vistas igual que antes) ...
     private lateinit var tabLayout: TabLayout
     private lateinit var layoutRango: LinearLayout
     private lateinit var layoutAnio: LinearLayout
     private lateinit var layoutDia: LinearLayout
     private lateinit var layoutMes: LinearLayout
-
     private lateinit var etFechaInicio: TextInputEditText
     private lateinit var etFechaFin: TextInputEditText
     private lateinit var etAnioOnly: TextInputEditText
@@ -50,9 +54,9 @@ class ConsultasFragment : Fragment() {
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: ConsultasAdapter
 
-    // --- VARIABLES PARA EDICIÓN FUNCIONAL ---
     private var activeDialogContactInput: EditText? = null
     private var activeDialogLocationInput: EditText? = null
+    private var activeDialogMap: MapView? = null
 
     private val contactLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
         if (uri != null) {
@@ -73,23 +77,29 @@ class ConsultasFragment : Fragment() {
             val intent = result.data
             if (intent != null) {
                 val place = Autocomplete.getPlaceFromIntent(intent)
-                activeDialogLocationInput?.setText("${place.name} - ${place.address}")
+                val direccion = "${place.name} - ${place.address}"
+                activeDialogLocationInput?.setText(direccion)
+
+                place.latLng?.let { latLng ->
+                    activeDialogMap?.getMapAsync { map ->
+                        map.clear()
+                        map.addMarker(MarkerOptions().position(latLng).title("Nueva"))
+                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
+                    }
+                }
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!Places.isInitialized()) {
-            Places.initialize(requireContext(), "AIzaSyA66uOipVB0QaCp2QTHVSAnGr5TqZkp9WY")
-        }
+        // CORRECCIÓN: API KEY REAL
+        if (!Places.isInitialized()) Places.initialize(requireContext(), "AIzaSyA66uOipVB0QaCp2QTHVSAnGr5TqZkp9WY")
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val view = inflater.inflate(R.layout.fragment_consultas, container, false)
 
-        // Vincular Vistas
         tabLayout = view.findViewById(R.id.tabLayoutFiltros)
         layoutRango = view.findViewById(R.id.layoutRango)
         layoutAnio = view.findViewById(R.id.layoutAnio)
@@ -106,7 +116,7 @@ class ConsultasFragment : Fragment() {
 
         recycler.layoutManager = LinearLayoutManager(context)
         adapter = ConsultasAdapter(emptyList()) { evento ->
-            mostrarDialogoEdicionFuncional(evento) // Abre el diálogo con mapas/contactos
+            mostrarDialogoEdicionCompleto(evento)
         }
         recycler.adapter = adapter
 
@@ -131,61 +141,41 @@ class ConsultasFragment : Fragment() {
         val tabIndex = tabLayout.selectedTabPosition
         var inicio: Long = 0
         var fin: Long = 0
-
         val cal = Calendar.getInstance()
         val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
         try {
-            // Lógica para definir el rango de tiempo [cite: 42-46]
             when (tabIndex) {
-                0 -> { // RANGO
+                0 -> {
                     if(!etFechaInicio.text.isNullOrEmpty() && !etFechaFin.text.isNullOrEmpty()){
                         val dateInicio = sdf.parse(etFechaInicio.text.toString())
                         val dateFin = sdf.parse(etFechaFin.text.toString())
                         if(dateInicio != null && dateFin != null) {
-                            inicio = dateInicio.time
-                            cal.time = dateFin
-                            cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59)
-                            fin = cal.timeInMillis
+                            inicio = dateInicio.time; cal.time = dateFin; cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59); fin = cal.timeInMillis
                         }
                     }
                 }
-                1 -> { // AÑO
+                1 -> {
                     val yearStr = etAnioOnly.text.toString()
                     val year = if(yearStr.isNotEmpty()) yearStr.toInt() else cal.get(Calendar.YEAR)
-                    cal.set(year, 0, 1, 0, 0, 0)
-                    inicio = cal.timeInMillis
-                    cal.set(year, 11, 31, 23, 59, 59)
-                    fin = cal.timeInMillis
+                    cal.set(year, 0, 1, 0, 0, 0); inicio = cal.timeInMillis; cal.set(year, 11, 31, 23, 59, 59); fin = cal.timeInMillis
                 }
-                2 -> { // DÍA
+                2 -> {
                     if(!etDiaOnly.text.isNullOrEmpty()){
                         val dateDia = sdf.parse(etDiaOnly.text.toString())
-                        if (dateDia != null) {
-                            cal.time = dateDia
-                            cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
-                            inicio = cal.timeInMillis
-                            cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59)
-                            fin = cal.timeInMillis
-                        }
+                        if (dateDia != null) { cal.time = dateDia; cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); inicio = cal.timeInMillis; cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59); fin = cal.timeInMillis }
                     }
                 }
-                3 -> { // MES
+                3 -> {
                     val yearStr = etAnioMes.text.toString()
                     val year = if(yearStr.isNotEmpty()) yearStr.toInt() else cal.get(Calendar.YEAR)
                     val mesNombre = spinnerMes.text.toString()
                     val meses = arrayOf("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
                     val mesIndex = meses.indexOf(mesNombre).takeIf { it >= 0 } ?: 0
-
-                    cal.set(year, mesIndex, 1, 0, 0, 0)
-                    inicio = cal.timeInMillis
-                    val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-                    cal.set(year, mesIndex, maxDay, 23, 59, 59)
-                    fin = cal.timeInMillis
+                    cal.set(year, mesIndex, 1, 0, 0, 0); inicio = cal.timeInMillis; val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH); cal.set(year, mesIndex, maxDay, 23, 59, 59); fin = cal.timeInMillis
                 }
             }
 
-            // Obtener categoría seleccionada (si hay alguna) [cite: 47]
             val chipId = chipGroupCat.checkedChipId
             var catFiltro: String? = null
             if (chipId != View.NO_ID) {
@@ -195,130 +185,144 @@ class ConsultasFragment : Fragment() {
 
             lifecycleScope.launch {
                 val dao = AppDatabase.getDatabase(requireContext()).eventoDao()
-
-                // 1. Obtener eventos por fecha
-                var eventos = if (inicio > 0) {
-                    dao.getEventosEnRango(inicio, fin)
-                } else {
-                    dao.getAll() // Si no hay fechas válidas, trae todo (o muestra error)
-                }
-
-                // 2. Filtrar por Categoría en memoria
-                if (catFiltro != null) {
-                    eventos = eventos.filter { it.categoria == catFiltro }
-                }
-
-                // 3. Actualizar la Tabla
+                var eventos = if (inicio > 0) dao.getEventosEnRango(inicio, fin) else dao.getAll()
+                if (catFiltro != null) eventos = eventos.filter { it.categoria == catFiltro }
                 adapter.updateList(eventos)
-
-                if (eventos.isEmpty()) {
-                    Toast.makeText(context, "No se encontraron eventos", Toast.LENGTH_SHORT).show()
-                }
+                if (eventos.isEmpty()) Toast.makeText(context, "No se encontraron eventos", Toast.LENGTH_SHORT).show()
             }
-
-        } catch (e: Exception) {
-            Toast.makeText(context, "Error en filtros: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
+        } catch (e: Exception) { Toast.makeText(context, "Error en filtros", Toast.LENGTH_SHORT).show() }
     }
 
-
-    // Configuración de UI (Calendarios y Spinners)
-    private fun setupTabs() {
-        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab?) {
-                layoutRango.visibility = View.GONE
-                layoutAnio.visibility = View.GONE
-                layoutDia.visibility = View.GONE
-                layoutMes.visibility = View.GONE
-
-                when (tab?.position) {
-                    0 -> layoutRango.visibility = View.VISIBLE
-                    1 -> layoutAnio.visibility = View.VISIBLE
-                    2 -> layoutDia.visibility = View.VISIBLE
-                    3 -> layoutMes.visibility = View.VISIBLE
-                }
-            }
-            override fun onTabUnselected(tab: TabLayout.Tab?) {}
-            override fun onTabReselected(tab: TabLayout.Tab?) {}
-        })
-    }
-
-    private fun setupPickers() {
-        val showCalendar = { editText: TextInputEditText ->
-            val cal = Calendar.getInstance()
-            DatePickerDialog(requireContext(), { _, y, m, d ->
-                val fecha = String.format("%02d/%02d/%04d", d, m + 1, y)
-                editText.setText(fecha)
-            }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
-        }
-        etFechaInicio.setOnClickListener { showCalendar(etFechaInicio) }
-        etFechaFin.setOnClickListener { showCalendar(etFechaFin) }
-        etDiaOnly.setOnClickListener { showCalendar(etDiaOnly) }
-    }
-
-    private fun setupMonthSpinner() {
-        val meses = arrayOf("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, meses)
-        spinnerMes.setAdapter(adapter)
-        spinnerMes.setText("Enero", false)
-        spinnerMes.setOnClickListener { spinnerMes.showDropDown() }
-    }
-
-
-    // --- DIÁLOGO DE EDICIÓN FUNCIONAL (IGUAL QUE EN HOME) ---
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun mostrarDialogoEdicionFuncional(evento: Evento) {
+    // --- COPIAR LA MISMA FUNCIÓN MOSTRAR DIALOGO EDICION COMPLETO DE HOMEFRAGMENT ---
+    // (Incluye toda la lógica de mapa, scrollView, spinners, etc)
+    private fun mostrarDialogoEdicionCompleto(evento: Evento) {
         val builder = AlertDialog.Builder(requireContext())
-        val viewDialog = layoutInflater.inflate(R.layout.dialog_editar_evento, null)
-        builder.setView(viewDialog)
+        val view = layoutInflater.inflate(R.layout.dialog_editar_evento, null)
+        builder.setView(view)
         val dialog = builder.create()
 
-        val spinnerStatus = viewDialog.findViewById<Spinner>(R.id.spinnerDialogStatus)
-        val etContacto = viewDialog.findViewById<EditText>(R.id.etDialogContacto)
-        val etUbicacion = viewDialog.findViewById<EditText>(R.id.etDialogUbicacion)
-        val btnActualizar = viewDialog.findViewById<Button>(R.id.btnDialogActualizar)
-        val btnEliminar = viewDialog.findViewById<Button>(R.id.btnDialogEliminar)
+        val dialogScrollView = view.findViewById<ScrollView>(R.id.dialogScrollView)
+        val mapView = view.findViewById<MapView>(R.id.mapViewDialog)
 
-        etContacto.setText(evento.contacto)
-        etUbicacion.setText(evento.ubicacion)
+        val chipGroupCat = view.findViewById<ChipGroup>(R.id.chipGroupEditCategoria)
+        val spinnerStatus = view.findViewById<AutoCompleteTextView>(R.id.spinnerDialogStatus)
+        val etFecha = view.findViewById<TextInputEditText>(R.id.etEditFecha)
+        val etHora = view.findViewById<TextInputEditText>(R.id.etEditHora)
+        val etDesc = view.findViewById<TextInputEditText>(R.id.etEditDescripcion)
+        val spinnerRecordatorio = view.findViewById<AutoCompleteTextView>(R.id.spinnerEditRecordatorio)
+        val etContact = view.findViewById<TextInputEditText>(R.id.etDialogContacto)
+        val etUbi = view.findViewById<TextInputEditText>(R.id.etDialogUbicacion)
+        val btnGuardar = view.findViewById<Button>(R.id.btnDialogActualizar)
+        val btnEliminar = view.findViewById<Button>(R.id.btnDialogEliminar)
 
-        // CONFIGURAR CLICKS PARA CONTACTOS Y MAPA
-        etContacto.focusable = View.NOT_FOCUSABLE
-        etContacto.isFocusableInTouchMode = false
-        etContacto.setOnClickListener {
-            activeDialogContactInput = etContacto
+        // MAPA
+        activeDialogMap = mapView
+        MapsInitializer.initialize(requireContext())
+        mapView.onCreate(null)
+        mapView.onResume()
+        mapView.getMapAsync { map ->
+            val lat = evento.latitud ?: 19.4326
+            val lng = evento.longitud ?: -99.1332
+            val pos = LatLng(lat, lng)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(pos, 15f))
+            map.addMarker(MarkerOptions().position(pos).title("Actual"))
+
+            map.setOnCameraMoveStartedListener { reason ->
+                if (reason == com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE) {
+                    dialogScrollView.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            map.setOnCameraIdleListener { dialogScrollView.requestDisallowInterceptTouchEvent(false) }
+
+            map.setOnMapLongClickListener { latLng ->
+                lifecycleScope.launch {
+                    val geocoder = Geocoder(requireContext(), Locale.getDefault())
+                    try {
+                        val addresses = withContext(Dispatchers.IO) { geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1) }
+                        if (!addresses.isNullOrEmpty()) etUbi.setText(addresses[0].getAddressLine(0))
+                    } catch (e: Exception) { }
+                    map.clear()
+                    map.addMarker(MarkerOptions().position(latLng).title("Nueva"))
+                }
+            }
+        }
+
+        // Llenar Datos
+        etFecha.setText(evento.fecha)
+        etHora.setText(evento.hora)
+        etDesc.setText(evento.descripcion)
+        etContact.setText(evento.contacto)
+        etUbi.setText(evento.ubicacion)
+
+        for (i in 0 until chipGroupCat.childCount) {
+            val chip = chipGroupCat.getChildAt(i) as Chip
+            if (chip.text.toString() == evento.categoria) { chip.isChecked = true; break }
+        }
+
+        val statusOpts = arrayOf("Pendiente", "Realizado", "Aplazado")
+        val adapterStatus = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, statusOpts)
+        spinnerStatus.setAdapter(adapterStatus)
+        spinnerStatus.setText(evento.status, false)
+        spinnerStatus.setOnClickListener { spinnerStatus.showDropDown() }
+
+        val recOpts = arrayOf("Sin recordatorio", "A la hora del evento", "10 minutos antes", "1 día antes")
+        val adapterRec = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, recOpts)
+        spinnerRecordatorio.setAdapter(adapterRec)
+        spinnerRecordatorio.setText(evento.recordatorio, false)
+        spinnerRecordatorio.setOnClickListener { spinnerRecordatorio.showDropDown() }
+
+        // Listeners
+        etFecha.setOnClickListener {
+            val c = Calendar.getInstance()
+            DatePickerDialog(requireContext(), { _, y, m, d ->
+                etFecha.setText(String.format("%02d/%02d/%04d", d, m + 1, y))
+            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+        }
+
+        etHora.setOnClickListener {
+            val c = Calendar.getInstance()
+            val timeListener = TimePickerDialog.OnTimeSetListener { _, h, min ->
+                etHora.setText(String.format("%02d:%02d", h, min))
+            }
+            TimePickerDialog(requireContext(), timeListener, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true).show()
+        }
+
+        etContact.setOnClickListener {
+            activeDialogContactInput = etContact
             contactLauncher.launch(null)
         }
 
-        etUbicacion.focusable = View.NOT_FOCUSABLE
-        etUbicacion.isFocusableInTouchMode = false
-        etUbicacion.setOnClickListener {
-            activeDialogLocationInput = etUbicacion
-            val fields = listOf(Place.Field.ID, Place.Field.NAME, Place.Field.ADDRESS)
+        etUbi.setOnClickListener {
+            activeDialogLocationInput = etUbi
+            val fields = listOf(Place.Field.ID, Place.Field.NAME, Place.Field.ADDRESS, Place.Field.LAT_LNG)
             val intent = Autocomplete.IntentBuilder(AutocompleteActivityMode.OVERLAY, fields).build(requireContext())
             placesLauncher.launch(intent)
         }
 
-        val statusOpciones = arrayOf("Pendiente", "Realizado", "Aplazado")
-        val adapterStatus = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, statusOpciones)
-        spinnerStatus.adapter = adapterStatus
-        val spinnerPos = statusOpciones.indexOf(evento.status)
-        if (spinnerPos >= 0) spinnerStatus.setSelection(spinnerPos)
+        btnGuardar.setOnClickListener {
+            val f = etFecha.text.toString()
+            val h = etHora.text.toString()
+            val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+            val ts = sdf.parse("$f $h")?.time ?: evento.timestamp
 
-        btnActualizar.setOnClickListener {
-            val nuevoStatus = spinnerStatus.selectedItem.toString()
-            val nuevoContacto = etContacto.text.toString()
-            val nuevaUbi = etUbicacion.text.toString()
+            val chipCatId = chipGroupCat.checkedChipId
+            val cat = if (chipCatId != View.NO_ID) view.findViewById<Chip>(chipCatId).text.toString() else evento.categoria
 
             val eventoActualizado = evento.copy(
-                status = nuevoStatus,
-                contacto = nuevoContacto,
-                ubicacion = nuevaUbi
+                categoria = cat,
+                fecha = f,
+                hora = h,
+                descripcion = etDesc.text.toString(),
+                status = spinnerStatus.text.toString(),
+                recordatorio = spinnerRecordatorio.text.toString(),
+                contacto = etContact.text.toString(),
+                ubicacion = etUbi.text.toString(),
+                timestamp = ts
             )
 
             lifecycleScope.launch {
                 AppDatabase.getDatabase(requireContext()).eventoDao().update(eventoActualizado)
-                Toast.makeText(context, "Evento Actualizado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Actualizado", Toast.LENGTH_SHORT).show()
                 realizarConsulta()
                 dialog.dismiss()
             }
@@ -334,4 +338,8 @@ class ConsultasFragment : Fragment() {
         }
         dialog.show()
     }
+
+    private fun setupTabs() { tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener { override fun onTabSelected(tab: TabLayout.Tab?) { layoutRango.visibility = View.GONE; layoutAnio.visibility = View.GONE; layoutDia.visibility = View.GONE; layoutMes.visibility = View.GONE; when (tab?.position) { 0 -> layoutRango.visibility = View.VISIBLE; 1 -> layoutAnio.visibility = View.VISIBLE; 2 -> layoutDia.visibility = View.VISIBLE; 3 -> layoutMes.visibility = View.VISIBLE } } override fun onTabUnselected(tab: TabLayout.Tab?) {} override fun onTabReselected(tab: TabLayout.Tab?) {} }) }
+    private fun setupPickers() { val showCalendar = { editText: TextInputEditText -> val cal = Calendar.getInstance(); DatePickerDialog(requireContext(), { _, y, m, d -> val fecha = String.format("%02d/%02d/%04d", d, m + 1, y); editText.setText(fecha) }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show() }; etFechaInicio.setOnClickListener { showCalendar(etFechaInicio) }; etFechaFin.setOnClickListener { showCalendar(etFechaFin) }; etDiaOnly.setOnClickListener { showCalendar(etDiaOnly) } }
+    private fun setupMonthSpinner() { val meses = arrayOf("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"); val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, meses); spinnerMes.setAdapter(adapter); spinnerMes.setText("Enero", false); spinnerMes.setOnClickListener { spinnerMes.showDropDown() } }
 }

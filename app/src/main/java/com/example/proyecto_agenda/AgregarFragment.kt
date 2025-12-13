@@ -7,6 +7,7 @@ import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
+import android.location.Geocoder
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.util.Log
@@ -29,14 +30,16 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.libraries.places.api.Places
-import com.google.android.libraries.places.api.model.Place
 import com.google.android.libraries.places.widget.Autocomplete
 import com.google.android.libraries.places.widget.model.AutocompleteActivityMode
+import com.google.android.libraries.places.api.model.Place
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -121,7 +124,6 @@ class AgregarFragment : Fragment(), OnMapReadyCallback {
         val cdmx = LatLng(19.4326, -99.1332)
         googleMap?.moveCamera(CameraUpdateFactory.newLatLngZoom(cdmx, 10f))
 
-        // Bloquear scroll principal al tocar el mapa
         googleMap?.setOnCameraMoveStartedListener { reason ->
             if (reason == GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE) {
                 scrollView.requestDisallowInterceptTouchEvent(true)
@@ -131,10 +133,27 @@ class AgregarFragment : Fragment(), OnMapReadyCallback {
             scrollView.requestDisallowInterceptTouchEvent(false)
         }
 
+        // CORRECCIÓN: Geocodificación (Obtener nombre del lugar)
         googleMap?.setOnMapLongClickListener { latLng ->
-            actualizarMapa(latLng, "Ubicación seleccionada")
-            etUbicacion.setText("Lat: ${latLng.latitude}, Lon: ${latLng.longitude}")
+            lifecycleScope.launch {
+                val direccion = obtenerDireccionDesdeCoordenadas(latLng)
+                etUbicacion.setText(direccion)
+                actualizarMapa(latLng, direccion)
+            }
         }
+    }
+
+    private suspend fun obtenerDireccionDesdeCoordenadas(latLng: LatLng): String = withContext(Dispatchers.IO) {
+        try {
+            val geocoder = Geocoder(requireContext(), Locale.getDefault())
+            val addresses = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
+            if (!addresses.isNullOrEmpty()) {
+                return@withContext addresses[0].getAddressLine(0) ?: "Ubicación en mapa"
+            }
+        } catch (e: Exception) {
+            Log.e("Geocoder", "Error: ${e.message}")
+        }
+        return@withContext "Lat: ${latLng.latitude}, Lon: ${latLng.longitude}"
     }
 
     private fun actualizarMapa(latLng: LatLng, title: String) {
@@ -163,6 +182,7 @@ class AgregarFragment : Fragment(), OnMapReadyCallback {
         etContacto.setOnClickListener { contactLauncher.launch(null) }
 
         etUbicacion.setOnClickListener {
+            // AQUÍ ESTABA EL ERROR: Necesitamos pedir LAT_LNG para que el mapa se mueva
             val fields = listOf(Place.Field.ID, Place.Field.NAME, Place.Field.ADDRESS, Place.Field.LAT_LNG)
             val intent = Autocomplete.IntentBuilder(AutocompleteActivityMode.OVERLAY, fields).build(requireContext())
             startAutocomplete.launch(intent)
@@ -170,11 +190,17 @@ class AgregarFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun setupStatusDropdown() {
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, resources.getStringArray(R.array.status_options))
+        // CORRECCIÓN SPINNER: Usar una lista simple y recargar el adaptador al hacer clic
+        val opciones = arrayOf("Pendiente", "Realizado", "Aplazado")
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, opciones)
+
         spinnerStatus.setAdapter(adapter)
-        spinnerStatus.setText("Pendiente", false) // CORRECCIÓN CLAVE
-        spinnerStatus.setOnClickListener { if(!spinnerStatus.isPopupShowing) spinnerStatus.showDropDown() }
-        spinnerStatus.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) spinnerStatus.showDropDown() }
+        spinnerStatus.setText("Pendiente", false) // false es clave para no filtrar
+
+        spinnerStatus.setOnClickListener {
+            spinnerStatus.setAdapter(adapter) // Recargar para mostrar todos
+            spinnerStatus.showDropDown()
+        }
     }
 
     private fun setupRecordatorioDropdown() {
@@ -182,8 +208,10 @@ class AgregarFragment : Fragment(), OnMapReadyCallback {
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, opciones)
         spinnerRecordatorio.setAdapter(adapter)
         spinnerRecordatorio.setText("A la hora del evento", false)
-        spinnerRecordatorio.setOnClickListener { if(!spinnerRecordatorio.isPopupShowing) spinnerRecordatorio.showDropDown() }
-        spinnerRecordatorio.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) spinnerRecordatorio.showDropDown() }
+        spinnerRecordatorio.setOnClickListener {
+            spinnerRecordatorio.setAdapter(adapter)
+            spinnerRecordatorio.showDropDown()
+        }
     }
 
     private fun guardarEvento() {
@@ -242,38 +270,16 @@ class AgregarFragment : Fragment(), OnMapReadyCallback {
             putExtra("titulo", evento.categoria)
             putExtra("mensaje", evento.descripcion)
             putExtra("idEvento", id)
-            putExtra("timestamp", timeInMillis) // Enviamos la hora para calcular retraso
+            putExtra("timestamp", timeInMillis)
         }
-
         val pendingIntent = PendingIntent.getBroadcast(
-            requireContext(),
-            id,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            requireContext(), id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-
         val alarmManager = requireContext().getSystemService(Context.ALARM_SERVICE) as AlarmManager
-
-        // Usamos setAlarmClock o setExactAndAllowWhileIdle para máxima precisión
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                // Esta opción permite que la alarma suene incluso en modo ahorro de energía
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    timeInMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    timeInMillis,
-                    pendingIntent
-                )
-            }
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
         } catch (e: SecurityException) {
-            Log.e("Alarma", "Error de permisos: ${e.message}")
-            // En Android 13+ deberías pedir permiso SCHEDULE_EXACT_ALARM si es crítico,
-            // pero setExactAndAllowWhileIdle suele funcionar bien.
+            Log.e("Alarma", "Falta permiso de alarma exacta")
         }
     }
 }

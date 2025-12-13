@@ -17,6 +17,10 @@ interface EventoDao {
     @Delete
     suspend fun delete(evento: Evento)
 
+    // NUEVO: Para borrar múltiples eventos viejos de una sola vez
+    @Delete
+    suspend fun deleteList(eventos: List<Evento>)
+
     @Query("SELECT * FROM eventos ORDER BY timestamp ASC")
     suspend fun getAll(): List<Evento>
 
