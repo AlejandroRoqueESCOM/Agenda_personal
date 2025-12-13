@@ -282,7 +282,7 @@ class ConsultasFragment : Fragment() {
         etContacto.setText(evento.contacto)
         etUbicacion.setText(evento.ubicacion)
 
-        // CONFIGURAR CLICKS PARA CONTACTOS Y MAPAS
+        // CONFIGURAR CLICKS PARA CONTACTOS Y MAPA
         etContacto.focusable = View.NOT_FOCUSABLE
         etContacto.isFocusableInTouchMode = false
         etContacto.setOnClickListener {
