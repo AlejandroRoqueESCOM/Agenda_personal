@@ -7,6 +7,8 @@ import android.database.Cursor
 import android.location.Geocoder
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -54,6 +56,10 @@ class ConsultasFragment : Fragment() {
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: ConsultasAdapter
 
+    // NUEVO: Barra de búsqueda y lista temporal
+    private lateinit var etBuscar: TextInputEditText
+    private var listaEventosActual: List<Evento> = emptyList() // Guarda la consulta original
+
     private var activeDialogContactInput: EditText? = null
     private var activeDialogLocationInput: EditText? = null
     private var activeDialogMap: MapView? = null
@@ -93,7 +99,6 @@ class ConsultasFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // CORRECCIÓN: API KEY REAL
         if (!Places.isInitialized()) Places.initialize(requireContext(), "AIzaSyA66uOipVB0QaCp2QTHVSAnGr5TqZkp9WY")
     }
 
@@ -113,6 +118,7 @@ class ConsultasFragment : Fragment() {
         spinnerMes = view.findViewById(R.id.spinnerMes)
         chipGroupCat = view.findViewById(R.id.chipGroupFiltroCat)
         recycler = view.findViewById(R.id.recyclerConsultas)
+        etBuscar = view.findViewById(R.id.etBuscar) // VINCULAR BUSCADOR
 
         recycler.layoutManager = LinearLayoutManager(context)
         adapter = ConsultasAdapter(emptyList()) { evento ->
@@ -123,6 +129,7 @@ class ConsultasFragment : Fragment() {
         setupTabs()
         setupPickers()
         setupMonthSpinner()
+        setupBuscador() // Configurar lógica de búsqueda
 
         view.findViewById<Button>(R.id.btnConsultar).setOnClickListener { realizarConsulta() }
         realizarConsultaInicial()
@@ -130,9 +137,39 @@ class ConsultasFragment : Fragment() {
         return view
     }
 
+    override fun onResume() {
+        super.onResume()
+        setupMonthSpinner()
+    }
+
+    // Lógica para filtrar mientras escribes
+    private fun setupBuscador() {
+        etBuscar.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                filtrarLista(s.toString())
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
+    private fun filtrarLista(texto: String) {
+        if (listaEventosActual.isEmpty()) return
+
+        val textoBusqueda = texto.lowercase()
+        val listaFiltrada = listaEventosActual.filter { evento ->
+            evento.descripcion.lowercase().contains(textoBusqueda) ||
+                    evento.categoria.lowercase().contains(textoBusqueda) ||
+                    evento.status.lowercase().contains(textoBusqueda) ||
+                    evento.fecha.contains(textoBusqueda)
+        }
+        adapter.updateList(listaFiltrada)
+    }
+
     private fun realizarConsultaInicial() {
         lifecycleScope.launch {
             val eventos = AppDatabase.getDatabase(requireContext()).eventoDao().getAll()
+            listaEventosActual = eventos // Guardamos la lista base
             adapter.updateList(eventos)
         }
     }
@@ -146,7 +183,7 @@ class ConsultasFragment : Fragment() {
 
         try {
             when (tabIndex) {
-                0 -> {
+                0 -> { // Rango
                     if(!etFechaInicio.text.isNullOrEmpty() && !etFechaFin.text.isNullOrEmpty()){
                         val dateInicio = sdf.parse(etFechaInicio.text.toString())
                         val dateFin = sdf.parse(etFechaFin.text.toString())
@@ -155,18 +192,18 @@ class ConsultasFragment : Fragment() {
                         }
                     }
                 }
-                1 -> {
+                1 -> { // Año
                     val yearStr = etAnioOnly.text.toString()
                     val year = if(yearStr.isNotEmpty()) yearStr.toInt() else cal.get(Calendar.YEAR)
                     cal.set(year, 0, 1, 0, 0, 0); inicio = cal.timeInMillis; cal.set(year, 11, 31, 23, 59, 59); fin = cal.timeInMillis
                 }
-                2 -> {
+                2 -> { // Día
                     if(!etDiaOnly.text.isNullOrEmpty()){
                         val dateDia = sdf.parse(etDiaOnly.text.toString())
                         if (dateDia != null) { cal.time = dateDia; cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); inicio = cal.timeInMillis; cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59); fin = cal.timeInMillis }
                     }
                 }
-                3 -> {
+                3 -> { // Mes
                     val yearStr = etAnioMes.text.toString()
                     val year = if(yearStr.isNotEmpty()) yearStr.toInt() else cal.get(Calendar.YEAR)
                     val mesNombre = spinnerMes.text.toString()
@@ -187,14 +224,22 @@ class ConsultasFragment : Fragment() {
                 val dao = AppDatabase.getDatabase(requireContext()).eventoDao()
                 var eventos = if (inicio > 0) dao.getEventosEnRango(inicio, fin) else dao.getAll()
                 if (catFiltro != null) eventos = eventos.filter { it.categoria == catFiltro }
-                adapter.updateList(eventos)
+
+                listaEventosActual = eventos // Actualizamos la lista base con los resultados nuevos
+
+                // Si ya había texto en el buscador, lo aplicamos de nuevo
+                val textoActual = etBuscar.text.toString()
+                if (textoActual.isNotEmpty()) {
+                    filtrarLista(textoActual)
+                } else {
+                    adapter.updateList(eventos)
+                }
+
                 if (eventos.isEmpty()) Toast.makeText(context, "No se encontraron eventos", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) { Toast.makeText(context, "Error en filtros", Toast.LENGTH_SHORT).show() }
     }
 
-    // --- COPIAR LA MISMA FUNCIÓN MOSTRAR DIALOGO EDICION COMPLETO DE HOMEFRAGMENT ---
-    // (Incluye toda la lógica de mapa, scrollView, spinners, etc)
     private fun mostrarDialogoEdicionCompleto(evento: Evento) {
         val builder = AlertDialog.Builder(requireContext())
         val view = layoutInflater.inflate(R.layout.dialog_editar_evento, null)
@@ -263,13 +308,13 @@ class ConsultasFragment : Fragment() {
         val adapterStatus = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, statusOpts)
         spinnerStatus.setAdapter(adapterStatus)
         spinnerStatus.setText(evento.status, false)
-        spinnerStatus.setOnClickListener { spinnerStatus.showDropDown() }
+        spinnerStatus.setOnClickListener { spinnerStatus.setAdapter(adapterStatus); spinnerStatus.showDropDown() }
 
         val recOpts = arrayOf("Sin recordatorio", "A la hora del evento", "10 minutos antes", "1 día antes")
         val adapterRec = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, recOpts)
         spinnerRecordatorio.setAdapter(adapterRec)
         spinnerRecordatorio.setText(evento.recordatorio, false)
-        spinnerRecordatorio.setOnClickListener { spinnerRecordatorio.showDropDown() }
+        spinnerRecordatorio.setOnClickListener { spinnerRecordatorio.setAdapter(adapterRec); spinnerRecordatorio.showDropDown() }
 
         // Listeners
         etFecha.setOnClickListener {
@@ -341,5 +386,16 @@ class ConsultasFragment : Fragment() {
 
     private fun setupTabs() { tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener { override fun onTabSelected(tab: TabLayout.Tab?) { layoutRango.visibility = View.GONE; layoutAnio.visibility = View.GONE; layoutDia.visibility = View.GONE; layoutMes.visibility = View.GONE; when (tab?.position) { 0 -> layoutRango.visibility = View.VISIBLE; 1 -> layoutAnio.visibility = View.VISIBLE; 2 -> layoutDia.visibility = View.VISIBLE; 3 -> layoutMes.visibility = View.VISIBLE } } override fun onTabUnselected(tab: TabLayout.Tab?) {} override fun onTabReselected(tab: TabLayout.Tab?) {} }) }
     private fun setupPickers() { val showCalendar = { editText: TextInputEditText -> val cal = Calendar.getInstance(); DatePickerDialog(requireContext(), { _, y, m, d -> val fecha = String.format("%02d/%02d/%04d", d, m + 1, y); editText.setText(fecha) }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show() }; etFechaInicio.setOnClickListener { showCalendar(etFechaInicio) }; etFechaFin.setOnClickListener { showCalendar(etFechaFin) }; etDiaOnly.setOnClickListener { showCalendar(etDiaOnly) } }
-    private fun setupMonthSpinner() { val meses = arrayOf("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"); val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, meses); spinnerMes.setAdapter(adapter); spinnerMes.setText("Enero", false); spinnerMes.setOnClickListener { spinnerMes.showDropDown() } }
+
+    private fun setupMonthSpinner() {
+        val meses = arrayOf("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, meses)
+        spinnerMes.setAdapter(adapter)
+        // spinnerMes.setText("Enero", false)
+
+        spinnerMes.setOnClickListener {
+            spinnerMes.setAdapter(adapter)
+            spinnerMes.showDropDown()
+        }
+    }
 }

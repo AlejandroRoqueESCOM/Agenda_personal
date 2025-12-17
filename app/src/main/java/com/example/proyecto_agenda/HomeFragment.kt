@@ -11,7 +11,6 @@ import android.database.Cursor
 import android.location.Geocoder
 import android.os.Bundle
 import android.provider.ContactsContract
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -82,7 +81,6 @@ class HomeFragment : Fragment() {
                 val direccion = "${place.name} - ${place.address}"
                 activeDialogLocationInput?.setText(direccion)
 
-                // Mover el mapa del diálogo si existe
                 place.latLng?.let { latLng ->
                     activeDialogMap?.getMapAsync { map ->
                         map.clear()
@@ -119,11 +117,10 @@ class HomeFragment : Fragment() {
         headerHistorial.setOnClickListener {
             isHistorialExpanded = !isHistorialExpanded
             recyclerPasados.visibility = if (isHistorialExpanded) View.VISIBLE else View.GONE
-            // Animación simple de rotación para la flecha
             iconExpand.animate().rotation(if (isHistorialExpanded) 0f else 180f).start()
         }
 
-        eliminarEventosViejos() // Borrado automático de eventos > 3 días
+        // NOTA: Eliminamos eliminarEventosViejos() para que se guarden por siempre
         cargarEventos()
         return view
     }
@@ -133,40 +130,16 @@ class HomeFragment : Fragment() {
         cargarEventos()
     }
 
-    // --- FUNCIÓN PARA BORRAR EVENTOS DE HACE MÁS DE 3 DÍAS ---
-    private fun eliminarEventosViejos() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val tresDiasMillis = 3L * 24 * 60 * 60 * 1000
-            val limiteFecha = System.currentTimeMillis() - tresDiasMillis
-
-            val dao = AppDatabase.getDatabase(requireContext()).eventoDao()
-            val todos = dao.getAll()
-
-            // Filtramos eventos que ya pasaron hace más de 3 días
-            val eventosViejos = todos.filter { it.timestamp < limiteFecha }
-
-            if (eventosViejos.isNotEmpty()) {
-                // Cancelamos sus alarmas por si acaso quedara alguna pendiente
-                eventosViejos.forEach { cancelarNotificacion(it.id) }
-
-                // Borramos de la BD
-                dao.deleteList(eventosViejos)
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Se eliminaron ${eventosViejos.size} eventos antiguos", Toast.LENGTH_SHORT).show()
-                    cargarEventos() // Refrescamos la lista
-                }
-            }
-        }
-    }
-
     private fun cargarEventos() {
         lifecycleScope.launch {
             val todosEventos = AppDatabase.getDatabase(requireContext()).eventoDao().getAll()
             val now = System.currentTimeMillis()
 
-            // Separar listas: Próximos (>= ahora) y Pasados (< ahora)
+            // Próximos: ordenados por fecha ascendente (lo más pronto primero)
             val proximos = todosEventos.filter { it.timestamp >= now }.sortedBy { it.timestamp }
+
+            // Pasados: ordenados por fecha DESCENDENTE (lo más reciente primero)
+            // Esto es importante para que la agrupación por fecha en el adaptador funcione bien
             val pasados = todosEventos.filter { it.timestamp < now }.sortedByDescending { it.timestamp }
 
             if (proximos.isEmpty()) {
@@ -191,7 +164,6 @@ class HomeFragment : Fragment() {
         val btnEditar = view.findViewById<Button>(R.id.btnDetalleEditar)
         val btnCerrar = view.findViewById<Button>(R.id.btnDetalleCerrar)
 
-        // Llenar vista de lectura
         view.findViewById<Chip>(R.id.chipDetalleCategoria).text = evento.categoria
         view.findViewById<TextView>(R.id.tvDetalleStatus).text = evento.status
         view.findViewById<TextView>(R.id.tvDetalleTitulo).text = evento.descripcion
@@ -228,27 +200,16 @@ class HomeFragment : Fragment() {
         val btnGuardar = view.findViewById<Button>(R.id.btnDialogActualizar)
         val btnEliminar = view.findViewById<Button>(R.id.btnDialogEliminar)
 
-        // --- MAPA ---
+        // MAPA
         activeDialogMap = mapView
         MapsInitializer.initialize(requireContext())
-        mapView.onCreate(null)
-        mapView.onResume()
+        mapView.onCreate(null); mapView.onResume()
         mapView.getMapAsync { map ->
-            val lat = evento.latitud ?: 19.4326
-            val lng = evento.longitud ?: -99.1332
-            val pos = LatLng(lat, lng)
-            map.moveCamera(CameraUpdateFactory.newLatLngZoom(pos, 15f))
-            map.addMarker(MarkerOptions().position(pos).title("Ubicación Actual"))
-
-            // Solución Scroll
-            map.setOnCameraMoveStartedListener { reason ->
-                if (reason == com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE) {
-                    dialogScrollView.requestDisallowInterceptTouchEvent(true)
-                }
-            }
+            val lat = evento.latitud ?: 19.4326; val lng = evento.longitud ?: -99.1332; val pos = LatLng(lat, lng)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(pos, 15f)); map.addMarker(MarkerOptions().position(pos).title("Actual"))
+            map.setOnCameraMoveStartedListener { reason -> if (reason == com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE) dialogScrollView.requestDisallowInterceptTouchEvent(true) }
             map.setOnCameraIdleListener { dialogScrollView.requestDisallowInterceptTouchEvent(false) }
 
-            // Click largo para cambiar ubicación
             map.setOnMapLongClickListener { latLng ->
                 lifecycleScope.launch {
                     val geocoder = Geocoder(requireContext(), Locale.getDefault())
@@ -256,80 +217,56 @@ class HomeFragment : Fragment() {
                         val addresses = withContext(Dispatchers.IO) { geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1) }
                         if (!addresses.isNullOrEmpty()) etUbi.setText(addresses[0].getAddressLine(0))
                     } catch (e: Exception) { }
-                    map.clear()
-                    map.addMarker(MarkerOptions().position(latLng).title("Nueva"))
+                    map.clear(); map.addMarker(MarkerOptions().position(latLng).title("Nueva"))
                 }
             }
         }
 
-        // --- PRE-LLENADO DE DATOS ---
         etFecha.setText(evento.fecha)
         etHora.setText(evento.hora)
         etDesc.setText(evento.descripcion)
         etContact.setText(evento.contacto)
         etUbi.setText(evento.ubicacion)
 
-        // Chips Categoría
         for (i in 0 until chipGroupCat.childCount) {
             val chip = chipGroupCat.getChildAt(i) as Chip
             if (chip.text.toString() == evento.categoria) { chip.isChecked = true; break }
         }
 
-        // Spinner Status (FIX: Recargar adapter al click)
         val statusOpts = arrayOf("Pendiente", "Realizado", "Aplazado")
         val adapterStatus = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, statusOpts)
         spinnerStatus.setAdapter(adapterStatus)
         spinnerStatus.setText(evento.status, false)
-        spinnerStatus.setOnClickListener {
-            spinnerStatus.setAdapter(adapterStatus)
-            spinnerStatus.showDropDown()
-        }
+        spinnerStatus.setOnClickListener { spinnerStatus.setAdapter(adapterStatus); spinnerStatus.showDropDown() }
 
-        // Spinner Recordatorio (FIX: Recargar adapter al click)
         val recOpts = arrayOf("Sin recordatorio", "A la hora del evento", "10 minutos antes", "1 día antes")
         val adapterRec = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, recOpts)
         spinnerRecordatorio.setAdapter(adapterRec)
         spinnerRecordatorio.setText(evento.recordatorio, false)
-        spinnerRecordatorio.setOnClickListener {
-            spinnerRecordatorio.setAdapter(adapterRec)
-            spinnerRecordatorio.showDropDown()
-        }
+        spinnerRecordatorio.setOnClickListener { spinnerRecordatorio.setAdapter(adapterRec); spinnerRecordatorio.showDropDown() }
 
-        // --- LISTENERS ---
         etFecha.setOnClickListener {
             val c = Calendar.getInstance()
-            DatePickerDialog(requireContext(), { _, y, m, d ->
-                etFecha.setText(String.format("%02d/%02d/%04d", d, m + 1, y))
-            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+            DatePickerDialog(requireContext(), { _, y, m, d -> etFecha.setText(String.format("%02d/%02d/%04d", d, m + 1, y)) }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
         }
 
         etHora.setOnClickListener {
             val c = Calendar.getInstance()
-            val timeListener = TimePickerDialog.OnTimeSetListener { _, h, min ->
-                etHora.setText(String.format("%02d:%02d", h, min))
-            }
+            val timeListener = TimePickerDialog.OnTimeSetListener { _, h, min -> etHora.setText(String.format("%02d:%02d", h, min)) }
             TimePickerDialog(requireContext(), timeListener, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true).show()
         }
 
-        etContact.setOnClickListener {
-            activeDialogContactInput = etContact
-            contactLauncher.launch(null)
-        }
-
-        etUbi.setOnClickListener {
-            activeDialogLocationInput = etUbi
+        etContact.setOnClickListener { activeDialogContactInput = etContact; contactLauncher.launch(null) }
+        etUbi.setOnClickListener { activeDialogLocationInput = etUbi;
             val fields = listOf(Place.Field.ID, Place.Field.NAME, Place.Field.ADDRESS, Place.Field.LAT_LNG)
             val intent = Autocomplete.IntentBuilder(AutocompleteActivityMode.OVERLAY, fields).build(requireContext())
             placesLauncher.launch(intent)
         }
 
-        // --- GUARDAR CAMBIOS ---
         btnGuardar.setOnClickListener {
             val f = etFecha.text.toString()
             val h = etHora.text.toString()
             val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-
-            // Recalcular timestamp
             val dateObj = sdf.parse("$f $h")
             val newTimestamp = dateObj?.time ?: evento.timestamp
 
@@ -345,18 +282,16 @@ class HomeFragment : Fragment() {
                 recordatorio = spinnerRecordatorio.text.toString(),
                 contacto = etContact.text.toString(),
                 ubicacion = etUbi.text.toString(),
-                timestamp = newTimestamp // Guardamos la nueva hora para que se mueva en la lista
+                timestamp = newTimestamp
             )
 
             lifecycleScope.launch {
-                // 1. Actualizar DB
                 AppDatabase.getDatabase(requireContext()).eventoDao().update(eventoActualizado)
 
-                // 2. REPROGRAMAR NOTIFICACIÓN (Si cambió la hora o el tipo de recordatorio)
                 val opcionRec = spinnerRecordatorio.text.toString()
-                reprogramarNotificacion(eventoActualizado, eventoActualizado.id, newTimestamp, opcionRec)
+                reprogramarNotificacion(eventoActualizado, evento.id, newTimestamp, opcionRec)
 
-                Toast.makeText(context, "Evento actualizado y alarma reprogramada", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Actualizado", Toast.LENGTH_SHORT).show()
                 cargarEventos()
                 dialog.dismiss()
             }
@@ -364,9 +299,7 @@ class HomeFragment : Fragment() {
 
         btnEliminar.setOnClickListener {
             lifecycleScope.launch {
-                // 1. Cancelar notificación
                 cancelarNotificacion(evento.id)
-                // 2. Borrar de DB
                 AppDatabase.getDatabase(requireContext()).eventoDao().delete(evento)
                 cargarEventos()
                 dialog.dismiss()
@@ -375,22 +308,13 @@ class HomeFragment : Fragment() {
         dialog.show()
     }
 
-    // --- FUNCIÓN PARA REPROGRAMAR ALARMA ---
     private fun reprogramarNotificacion(evento: Evento, id: Int, eventTime: Long, opcion: String) {
         val alarmManager = requireContext().getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(requireContext(), NotificationReceiver::class.java)
 
-        // 1. Primero cancelamos la alarma vieja por si existe
-        val pendingIntentCancel = PendingIntent.getBroadcast(
-            requireContext(), id, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
-        )
-        if (pendingIntentCancel != null) {
-            alarmManager.cancel(pendingIntentCancel)
-            pendingIntentCancel.cancel()
-        }
+        val pendingIntentCancel = PendingIntent.getBroadcast(requireContext(), id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE)
+        if (pendingIntentCancel != null) { alarmManager.cancel(pendingIntentCancel); pendingIntentCancel.cancel() }
 
-        // 2. Calcular a qué hora debe sonar la nueva alarma
         val triggerTime = when (opcion) {
             "A la hora del evento" -> eventTime
             "10 minutos antes" -> eventTime - (10 * 60 * 1000)
@@ -398,42 +322,20 @@ class HomeFragment : Fragment() {
             else -> null
         }
 
-        // 3. Si hay fecha válida y es en el futuro, creamos la nueva alarma
         if (triggerTime != null && triggerTime > System.currentTimeMillis()) {
-            intent.apply {
-                putExtra("titulo", evento.categoria)
-                putExtra("mensaje", evento.descripcion)
-                putExtra("idEvento", id)
-            }
-            // FLAG_UPDATE_CURRENT es clave aquí
-            val pendingIntentNew = PendingIntent.getBroadcast(
-                requireContext(), id, intent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
+            intent.apply { putExtra("titulo", evento.categoria); putExtra("mensaje", evento.descripcion); putExtra("idEvento", id) }
+            val pendingIntentNew = PendingIntent.getBroadcast(requireContext(), id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntentNew)
-                } else {
-                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntentNew)
-                }
-                Log.d("ALARM_DEBUG", "Alarma reprogramada para: ${Date(triggerTime)}")
-            } catch (e: SecurityException) {
-                Log.e("ALARM_DEBUG", "Error permisos: ${e.message}")
-            }
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntentNew)
+                else alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntentNew)
+            } catch (e: SecurityException) {}
         }
     }
 
-    // --- FUNCIÓN PARA CANCELAR ALARMA AL BORRAR ---
     private fun cancelarNotificacion(id: Int) {
         val alarmManager = requireContext().getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(requireContext(), NotificationReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            requireContext(), id, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
-        )
-        if (pendingIntent != null) {
-            alarmManager.cancel(pendingIntent)
-            pendingIntent.cancel()
-        }
+        val pendingIntent = PendingIntent.getBroadcast(requireContext(), id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE)
+        if (pendingIntent != null) { alarmManager.cancel(pendingIntent); pendingIntent.cancel() }
     }
 }
